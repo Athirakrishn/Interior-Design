@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { motion, useAnimation, useInView, AnimatePresence } from 'framer-motion'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { motion, useAnimation, useInView, AnimatePresence, useScroll, useTransform } from 'framer-motion'
 import { 
   Sparkles, Sofa, Briefcase, Compass, Armchair, Hammer, Eye, 
   Award, Users, Clock, Star, ArrowRight, ChevronLeft, ChevronRight,
@@ -225,91 +225,324 @@ function Home() {
     }
   }
 
+  // ─── Scroll-driven Frame Animation ───────────────────────────────────────
+  const TOTAL_FRAMES = 41
+  const canvasRef = useRef(null)
+  const heroSectionRef = useRef(null)
+  const imagesRef = useRef([])       // 1-indexed: imagesRef.current[1..41]
+  const loadedCountRef = useRef(0)
+  const currentFrameRef = useRef(1)
+  const rafRef = useRef(null)
+  const targetFrameRef = useRef(1)
+  const [allLoaded, setAllLoaded] = useState(false)
+  const [loadingPct, setLoadingPct] = useState(0)
+
+  const getFramePath = (i) => {
+    const p = String(i).padStart(3, '0')
+    return `/images/herosection/ezgif-frame-${p}.png`
+  }
+
+  // Draw a specific frame onto the canvas (cover-fill)
+  const drawFrame = useCallback((idx) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const img = imagesRef.current[idx]
+    if (!img || !img.complete) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    // cover scaling
+    const ir = img.naturalWidth / img.naturalHeight
+    const cr = canvas.width / canvas.height
+    let dw, dh, dx, dy
+    if (ir > cr) {
+      dh = canvas.height; dw = dh * ir
+      dx = (canvas.width - dw) / 2; dy = 0
+    } else {
+      dw = canvas.width; dh = dw / ir
+      dx = 0; dy = (canvas.height - dh) / 2
+    }
+    ctx.drawImage(img, dx, dy, dw, dh)
+  }, [])
+
+  // Smooth lerp render loop
+  const renderLoop = useCallback(() => {
+    const target = targetFrameRef.current
+    const current = currentFrameRef.current
+    const diff = target - current
+    if (Math.abs(diff) < 0.5) {
+      currentFrameRef.current = target
+    } else {
+      currentFrameRef.current += diff * 0.12
+    }
+    const frameIdx = Math.round(currentFrameRef.current)
+    if (frameIdx >= 1 && frameIdx <= TOTAL_FRAMES) {
+      drawFrame(frameIdx)
+    }
+    rafRef.current = requestAnimationFrame(renderLoop)
+  }, [drawFrame])
+
+  // Preload all frames
+  useEffect(() => {
+    let cancelled = false
+    const load = (i) => {
+      const img = new Image()
+      img.onload = () => {
+        if (cancelled) return
+        imagesRef.current[i] = img
+        loadedCountRef.current++
+        const pct = Math.round((loadedCountRef.current / TOTAL_FRAMES) * 100)
+        setLoadingPct(pct)
+        if (loadedCountRef.current === TOTAL_FRAMES) {
+          setAllLoaded(true)
+        }
+        // Draw first frame as soon as it arrives
+        if (i === 1) drawFrame(1)
+      }
+      img.onerror = () => {
+        if (cancelled) return
+        loadedCountRef.current++
+      }
+      img.src = getFramePath(i)
+    }
+    for (let i = 1; i <= TOTAL_FRAMES; i++) load(i)
+    return () => { cancelled = true }
+  }, [drawFrame])
+
+  // Start render loop on mount
+  useEffect(() => {
+    rafRef.current = requestAnimationFrame(renderLoop)
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
+  }, [renderLoop])
+
+  // Scroll handler: map scroll progress → frame index
+  // Uses offsetTop (absolute page position) — more reliable than getBoundingClientRect
+  // which is viewport-relative and breaks when ancestors have transforms.
+  useEffect(() => {
+    const onScroll = () => {
+      const section = heroSectionRef.current
+      if (!section) return
+      const sectionTop = section.offsetTop          // px from top of document
+      const sectionH   = section.offsetHeight       // total height (600vh)
+      const viewH      = window.innerHeight
+      const scrollY    = window.scrollY
+
+      // How far past the section start has the user scrolled?
+      const scrolled   = scrollY - sectionTop
+      // Total scrollable distance inside the hero section
+      const scrollable = sectionH - viewH
+
+      if (scrollable <= 0) return
+      const progress = Math.min(Math.max(scrolled / scrollable, 0), 1)
+      targetFrameRef.current = 1 + progress * (TOTAL_FRAMES - 1)
+    }
+
+    // Run once on mount to set the initial frame (page may start mid-scroll)
+    onScroll()
+
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Resize canvas buffer to exactly match the viewport — prevents cover-fill distortion
+  // and ensures canvas.width/height used inside drawFrame reflect actual screen pixels.
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const W = window.innerWidth
+    const H = window.innerHeight
+    // Only update if dimensions actually changed (avoid unnecessary redraws)
+    if (canvas.width !== W || canvas.height !== H) {
+      canvas.width  = W
+      canvas.height = H
+    }
+    drawFrame(Math.round(currentFrameRef.current))
+  }, [drawFrame])
+
+  useEffect(() => {
+    resizeCanvas()  // Set correct size immediately on mount
+    window.addEventListener('resize', resizeCanvas)
+    return () => window.removeEventListener('resize', resizeCanvas)
+  }, [resizeCanvas])
+
   return (
-    <main className="bg-white text-slate-900 overflow-hidden" id="home">
-      
-      {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center pt-24 md:pt-12 bg-gradient-to-br from-white via-purple-50/20 to-pink-50/15 overflow-hidden">
-        {/* Floating animated blobs */}
-        <motion.div 
-          animate={{ y: [0, -15, 0], x: [0, 10, 0] }}
-          transition={{ repeat: Infinity, duration: 8, ease: "easeInOut" }}
-          className="absolute -right-24 top-24 w-96 h-96 rounded-full bg-gradient-to-br from-brand-300/20 to-accent-300/20 blur-3xl pointer-events-none"
-        />
-        <motion.div 
-          animate={{ y: [0, 20, 0], x: [0, -15, 0] }}
-          transition={{ repeat: Infinity, duration: 10, ease: "easeInOut" }}
-          className="absolute -left-20 bottom-12 w-80 h-80 rounded-full bg-gradient-to-br from-purple-200/25 to-pink-200/25 blur-3xl pointer-events-none"
-        />
+    // NO overflow on main — overflow-x/overflow-y:hidden on ANY ancestor
+    // silently kills position:sticky in all Chromium-based browsers.
+    // Individual sections handle their own decorative overflow instead.
+    <main className="bg-white text-slate-900">
 
-        <div className="max-w-7xl mx-auto px-6 md:px-12 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-20 w-full py-12">
-          {/* Left Text */}
-          <motion.div 
-            initial="hidden"
-            animate="visible"
-            variants={staggerContainer}
-            className="lg:col-span-6 space-y-8"
+      {/* ── Scroll-Driven Cinematic Hero ─────────────────────────────────── */}
+      {/* Outer wrapper: tall div creates scroll depth; inner panel sticks to top */}
+      <div
+        ref={heroSectionRef}
+        id="home"
+        style={{ height: '600vh', position: 'relative', width: '100%' }}
+      >
+        {/*
+          Sticky panel — all positioning done via inline styles, not Tailwind,
+          to avoid any class-ordering or specificity issues that can affect sticky.
+          z-index: 1 so the header (z-50) renders on top of the hero.
+        */}
+        <div style={{
+          position: 'sticky',
+          top: 0,
+          width: '100%',
+          height: '100vh',
+          overflow: 'hidden',
+          background: '#0a0a0a',
+        }}>
+
+          {/*
+            Canvas — all sizing via inline styles.
+            width/height attributes are set by JS in resizeCanvas() to match viewport.
+            CSS width/height set to 100% of the sticky container (which is 100vh × 100vw).
+          */}
+          <canvas
+            ref={canvasRef}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              display: 'block',
+            }}
+          />
+
+          {/* Cinematic dark vignette */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: 'radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.55) 100%)'
+            }}
+          />
+          {/* Bottom gradient fade */}
+          <div
+            className="absolute bottom-0 left-0 right-0 h-40 pointer-events-none"
+            style={{ background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.5))' }}
+          />
+
+          {/* ═══════════════════════════════════════════════════════════════
+               MODERN EDITORIAL OVERLAY — minimal, typographic, premium
+          ═══════════════════════════════════════════════════════════════ */}
+
+          {/* ── Top-right: Year / index badge ── */}
+          <motion.div
+            className="absolute top-8 right-8 z-20 pointer-events-none flex flex-col items-end gap-1"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.6 }}
           >
-            <motion.div 
-              variants={fadeIn}
-              className="inline-flex items-center space-x-2 border border-brand-200 bg-brand-50 px-4 py-2 rounded-full shadow-sm shadow-brand-500/5"
-            >
-              <Sparkles className="w-4 h-4 text-brand-600 animate-pulse" />
-              <span className="text-xs font-sans tracking-widest uppercase text-brand-600 font-semibold">Award-Winning Design Studio</span>
-            </motion.div>
-            
-            <motion.h1 
-              variants={fadeIn}
-              className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl tracking-tight leading-[1.1] text-slate-900"
-            >
-              Transforming Spaces <br />
-              Into <span className="bg-gradient-to-r from-brand-600 via-fuchsia-500 to-accent-500 bg-clip-text text-transparent">Luxury Experiences</span>
-            </motion.h1>
-
-            <motion.p 
-              variants={fadeIn}
-              className="font-sans text-slate-600 text-base md:text-lg leading-relaxed max-w-lg"
-            >
-              Bespoke luxury interior designs curated to harmonize elegance, architecture, and personal warmth into an aesthetic sanctuary uniquely yours.
-            </motion.p>
-
-            <motion.div 
-              variants={fadeIn}
-              className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 pt-2"
-            >
-              <a
-                href="#portfolio"
-                className="px-8 py-4 bg-gradient-to-r from-brand-600 to-accent-500 hover:from-brand-700 hover:to-accent-600 text-white font-sans font-bold text-xs uppercase tracking-widest text-center transition-all duration-300 rounded-full shadow-lg shadow-brand-500/15 hover:shadow-brand-500/30 transform hover:-translate-y-0.5"
-              >
-                View Portfolio
-              </a>
-              <a
-                href="#contact"
-                className="px-8 py-4 border border-slate-200 hover:border-brand-500 hover:text-brand-600 text-slate-700 font-sans font-bold text-xs uppercase tracking-widest text-center transition-all duration-300 rounded-full bg-white shadow-sm hover:shadow-md transform hover:-translate-y-0.5"
-              >
-                Get Free Consultation
-              </a>
-            </motion.div>
+            <span style={{
+              fontFamily: 'Inter, sans-serif',
+              fontSize: '0.6rem',
+              letterSpacing: '0.3em',
+              color: 'rgba(255,255,255,0.35)',
+              textTransform: 'uppercase',
+            }}>Est.</span>
+            <span style={{
+              fontFamily: 'Syne, sans-serif',
+              fontSize: '1.1rem',
+              fontWeight: 700,
+              color: 'rgba(255,255,255,0.18)',
+              letterSpacing: '0.08em',
+            }}>2009</span>
           </motion.div>
 
-          {/* Right Image Frame */}
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1, ease: 'easeOut' }}
-            className="lg:col-span-6 relative flex justify-center"
+          {/* ── Left edge: vertical rotated wordmark ── */}
+          <motion.div
+            className="absolute left-8 z-20 pointer-events-none"
+            style={{ top: '50%', transform: 'translateY(-50%)' }}
+            initial={{ opacity: 0, x: -24 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 1, delay: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
-            <div className="relative w-full max-w-lg aspect-square md:aspect-[4/3] lg:aspect-[4/5] xl:aspect-square overflow-hidden rounded-3xl border border-purple-100 p-2.5 bg-white shadow-2xl shadow-brand-950/5">
-              <div className="absolute inset-0 border border-brand-500/10 rounded-2xl m-3 pointer-events-none z-10" />
-              <img
-                src={heroImg}
-                alt="Luxury living room interior design by LuxeSpace"
-                className="w-full h-full object-cover rounded-2xl hover:scale-105 transition-transform duration-1000"
+            <div style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', transform: 'rotate(180deg)' }}>
+              <span style={{
+                fontFamily: 'Syne, sans-serif',
+                fontWeight: 800,
+                fontSize: 'clamp(0.65rem, 1vw, 0.8rem)',
+                letterSpacing: '0.35em',
+                textTransform: 'uppercase',
+                color: 'rgba(255,255,255,0.22)',
+              }}>LuxeSpace Interiors</span>
+            </div>
+          </motion.div>
+
+          {/* ── Bottom-left: large editorial counter ── */}
+          <motion.div
+            className="absolute bottom-10 left-10 z-20 pointer-events-none"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, delay: 0.8 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px' }}>
+              {/* Thin vertical rule */}
+              <div style={{ width: 1, height: 52, background: 'rgba(192,132,252,0.45)', flexShrink: 0 }} />
+              <div>
+                <p style={{
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: '0.58rem',
+                  letterSpacing: '0.28em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.38)',
+                  marginBottom: '6px',
+                }}>Bespoke Design Studio</p>
+                <p style={{
+                  fontFamily: 'Syne, sans-serif',
+                  fontWeight: 700,
+                  fontSize: 'clamp(1.05rem, 2vw, 1.35rem)',
+                  color: 'rgba(255,255,255,0.72)',
+                  letterSpacing: '0.04em',
+                  lineHeight: 1.3,
+                }}>Spaces Curated<br />for the Refined</p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* ── Bottom-center: animated scroll indicator ── */}
+          <motion.div
+            className="absolute z-20 pointer-events-none"
+            style={{ bottom: 36, left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1.6, duration: 0.8 }}
+          >
+            {/* Pill scroll indicator */}
+            <div style={{
+              width: 22,
+              height: 36,
+              borderRadius: 99,
+              border: '1.5px solid rgba(255,255,255,0.2)',
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'center',
+              padding: '5px 0',
+            }}>
+              <motion.div
+                style={{
+                  width: 3,
+                  height: 8,
+                  borderRadius: 99,
+                  background: 'rgba(192,132,252,0.8)',
+                }}
+                animate={{ y: [0, 12, 0] }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
               />
             </div>
           </motion.div>
+
+          {/* ── Loading progress bar ── */}
+          {!allLoaded && (
+            <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
+              <div
+                className="h-[2px] bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
+                style={{ width: `${loadingPct}%` }}
+              />
+            </div>
+          )}
         </div>
-      </section>
+      </div>
 
       {/* About Section */}
       <section className="py-28 bg-white border-t border-purple-100/50" id="about">

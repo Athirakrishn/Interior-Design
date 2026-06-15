@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Link, useLocation } from 'react-router-dom'
 import { Menu, X, Sparkles } from 'lucide-react'
 
 function Header() {
@@ -14,13 +15,17 @@ function Header() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
+  const location = useLocation()
+  const isHome = location.pathname === '/'
+
+  // Nav items: route-based for /about, anchor-based for all homepage sections
   const navLinks = [
-    { name: 'Home', href: '#home' },
-    { name: 'About', href: '#about' },
-    { name: 'Services', href: '#services' },
-    { name: 'Portfolio', href: '#portfolio' },
-    { name: 'Testimonials', href: '#testimonials' },
-    { name: 'Contact', href: '#contact' },
+    { name: 'Home',         href: '/',            isRoute: true  },
+    { name: 'About',        href: '/about',        isRoute: true  },
+    { name: 'Services',     href: '/#services',    isRoute: false },
+    { name: 'Portfolio',    href: '/#portfolio',   isRoute: false },
+    { name: 'Testimonials', href: '/#testimonials',isRoute: false },
+    { name: 'Contact',      href: '/#contact',     isRoute: false },
   ]
 
   return (
@@ -33,26 +38,37 @@ function Header() {
     >
       <div className="max-w-7xl mx-auto px-6 md:px-12 flex justify-between items-center">
         {/* Logo */}
-        <a href="#home" className="flex items-center space-x-2 group">
+        <Link to="/" className="flex items-center space-x-2 group">
           <div className="w-10 h-10 flex items-center justify-center bg-gradient-to-tr from-brand-600 to-accent-500 rounded-xl shadow-md group-hover:rotate-6 transition-transform duration-300">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
           <span className="font-display font-extrabold text-2xl tracking-tight text-slate-900">
             Luxe<span className="bg-gradient-to-r from-brand-600 to-accent-500 bg-clip-text text-transparent">Space</span>
           </span>
-        </a>
+        </Link>
 
         {/* Desktop Nav Links */}
         <nav className="hidden md:flex items-center space-x-8">
           {navLinks.map((link) => (
-            <a
-              key={link.name}
-              href={link.href}
-              className="font-sans text-sm font-medium tracking-wide text-slate-600 hover:text-brand-600 transition-colors duration-300 relative py-1.5 group"
-            >
-              {link.name}
-              <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-brand-500 to-accent-500 transition-all duration-300 group-hover:w-full"></span>
-            </a>
+            link.isRoute ? (
+              <Link
+                key={link.name}
+                to={link.href}
+                className="font-sans text-sm font-medium tracking-wide text-slate-600 hover:text-brand-600 transition-colors duration-300 relative py-1.5 group"
+              >
+                {link.name}
+                <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-brand-500 to-accent-500 transition-all duration-300 group-hover:w-full" />
+              </Link>
+            ) : (
+              <a
+                key={link.name}
+                href={link.href}
+                className="font-sans text-sm font-medium tracking-wide text-slate-600 hover:text-brand-600 transition-colors duration-300 relative py-1.5 group"
+              >
+                {link.name}
+                <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-brand-500 to-accent-500 transition-all duration-300 group-hover:w-full" />
+              </a>
+            )
           ))}
         </nav>
 
@@ -88,14 +104,25 @@ function Header() {
           >
             <div className="px-6 py-8 flex flex-col space-y-6">
               {navLinks.map((link) => (
-                <a
-                  key={link.name}
-                  href={link.href}
-                  onClick={() => setIsMenuOpen(false)}
-                  className="font-sans text-base font-semibold tracking-wide text-slate-700 hover:text-brand-600 transition-colors duration-300"
-                >
-                  {link.name}
-                </a>
+                link.isRoute ? (
+                  <Link
+                    key={link.name}
+                    to={link.href}
+                    onClick={() => setIsMenuOpen(false)}
+                    className="font-sans text-base font-semibold tracking-wide text-slate-700 hover:text-brand-600 transition-colors duration-300"
+                  >
+                    {link.name}
+                  </Link>
+                ) : (
+                  <a
+                    key={link.name}
+                    href={link.href}
+                    onClick={() => setIsMenuOpen(false)}
+                    className="font-sans text-base font-semibold tracking-wide text-slate-700 hover:text-brand-600 transition-colors duration-300"
+                  >
+                    {link.name}
+                  </a>
+                )
               ))}
               <a
                 href="#contact"
